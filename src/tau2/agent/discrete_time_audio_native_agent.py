@@ -294,6 +294,12 @@ class DiscreteTimeAudioNativeAgent(FullDuplexAgent[DiscreteTimeAgentState]):
             )
 
             self.vad_config = LiveKitVADConfig()
+        elif provider == "assemblyai":
+            from tau2.voice.audio_native.assemblyai.provider import (
+                AssemblyAIVADConfig,
+            )
+
+            self.vad_config = AssemblyAIVADConfig()
         else:  # nova
             from tau2.voice.audio_native.nova.provider import NovaVADConfig
 

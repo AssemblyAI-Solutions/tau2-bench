@@ -189,6 +189,15 @@ DEFAULT_QWEN_INPUT_SAMPLE_RATE = 16000  # fixed, API-defined
 DEFAULT_QWEN_OUTPUT_SAMPLE_RATE = 24000  # fixed, API-defined
 
 # =============================================================================
+# ASSEMBLYAI PROVIDER (overridable voice, fixed API constants)
+# =============================================================================
+DEFAULT_ASSEMBLYAI_VOICE_AGENT_URL = "wss://agents.assemblyai.com/v1/ws"  # fixed
+DEFAULT_ASSEMBLYAI_MODEL = "assemblyai-voice-agent"  # fixed, endpoint-determined
+DEFAULT_ASSEMBLYAI_VOICE = "Aria"  # overridable
+DEFAULT_ASSEMBLYAI_INPUT_SAMPLE_RATE = 24000  # fixed, API-defined
+DEFAULT_ASSEMBLYAI_OUTPUT_SAMPLE_RATE = 24000  # fixed, API-defined
+
+# =============================================================================
 # PROVIDER REGISTRY (derived from above)
 # =============================================================================
 DEFAULT_AUDIO_NATIVE_MODELS = {
@@ -198,6 +207,7 @@ DEFAULT_AUDIO_NATIVE_MODELS = {
     "nova": DEFAULT_NOVA_MODEL,
     "qwen": DEFAULT_QWEN_MODEL,
     "livekit": "dummy",
+    "assemblyai": DEFAULT_ASSEMBLYAI_MODEL,
 }
 
 DEFAULT_AUDIO_NATIVE_REASONING_EFFORT: dict[str, str | None] = {
@@ -207,6 +217,7 @@ DEFAULT_AUDIO_NATIVE_REASONING_EFFORT: dict[str, str | None] = {
     "nova": None,
     "qwen": None,
     "livekit": None,
+    "assemblyai": None,
 }
 
 AUDIO_NATIVE_PROVIDER_TYPES = {
@@ -216,6 +227,7 @@ AUDIO_NATIVE_PROVIDER_TYPES = {
     "nova": "audio_native",
     "qwen": "audio_native",
     "livekit": "cascaded",
+    "assemblyai": "audio_native",
 }
 
 # =============================================================================

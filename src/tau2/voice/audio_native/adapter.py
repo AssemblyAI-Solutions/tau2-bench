@@ -452,6 +452,17 @@ def create_adapter(
             send_audio_instant=send_audio_instant,
             audio_format=audio_format,
         )
+    elif provider == "assemblyai":
+        from tau2.voice.audio_native.assemblyai.discrete_time_adapter import (
+            DiscreteTimeAssemblyAIAdapter,
+        )
+
+        adapter = DiscreteTimeAssemblyAIAdapter(
+            tick_duration_ms=tick_duration_ms,
+            send_audio_instant=send_audio_instant,
+            model=model,
+            reasoning_effort=reasoning_effort,
+        )
     else:
         raise ValueError(f"Unknown provider: {provider}")
 
