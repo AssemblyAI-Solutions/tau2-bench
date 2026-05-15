@@ -49,8 +49,96 @@ class DeepgramSTTConfig(BaseModel):
     punctuate: bool = True
 
 
-# Type alias for STT configs (extensible for future providers)
-STTConfig = DeepgramSTTConfig
+class DeepgramFluxSTTConfig(BaseModel):
+    """Configuration for Deepgram Flux STT (v2 streaming API).
+
+    Flux uses Deepgram's newer "v2" streaming endpoint with a different
+    turn-detection model (eager-EOT confidence + EOT threshold + EOT
+    timeout) rather than the simple silence threshold that Nova uses.
+    It maps to a separate plugin class (`deepgram.STTv2`) on a different
+    base URL (`wss://api.deepgram.com/v2/listen`).
+
+    Attributes:
+        provider: Provider identifier (always "deepgram-flux").
+        model: Flux model id (default "flux-general-en").
+        eager_eot_threshold: Confidence threshold for the eager end-of-turn
+            check. When None, the plugin's own default is used.
+        eot_threshold: Confidence threshold for the final end-of-turn
+            decision. When None, the plugin's own default is used.
+        eot_timeout_ms: Maximum silence (ms) before forcing the turn to
+            end regardless of confidence. When None, plugin default.
+        sample_rate: PCM sample rate sent to Deepgram.
+        keyterm / keyterms: Domain term boosting.
+    """
+
+    provider: Literal["deepgram-flux"] = "deepgram-flux"
+    model: str = "flux-general-en"
+    sample_rate: int = 16000
+    eager_eot_threshold: Optional[float] = None
+    eot_threshold: Optional[float] = None
+    eot_timeout_ms: Optional[int] = None
+    keyterm: Optional[list[str]] = None
+    keyterms: Optional[list[str]] = None
+
+
+class AssemblyAISTTConfig(BaseModel):
+    """Configuration for AssemblyAI Universal-3 Pro Streaming STT.
+
+    Streaming variant of AssemblyAI's Universal-3 Pro speech recognition
+    model. Uses punctuation-based turn detection — `min_turn_silence` and
+    `max_turn_silence` control endpointing directly, not LiveKit's
+    `endpointing.min_delay`/`max_delay`.
+
+    Defaults follow AssemblyAI's recommended starting parameters for
+    STT-based turn detection in LiveKit:
+        - https://www.assemblyai.com/docs/voice-agents/livekit-u3-rt-pro
+
+    Attributes:
+        provider: Provider identifier (always "assemblyai").
+        model: AssemblyAI streaming model id. "u3-rt-pro" is Universal-3
+            Pro Streaming. Other options include "universal-streaming-english"
+            and "universal-streaming-multilingual".
+        api_key: API key override. If None, the plugin reads
+            `ASSEMBLYAI_API_KEY` from the environment.
+        min_turn_silence: Silence (ms) before a speculative end-of-turn
+            check fires. Default 100 ms (matches both LiveKit plugin and
+            AssemblyAI API defaults).
+        max_turn_silence: Maximum silence (ms) before forcing a turn to
+            end regardless of punctuation. Default 1000 ms — matches the
+            AssemblyAI API default and is recommended for STT-driven turn
+            detection in LiveKit. (Plugin's own default is 100 ms, which
+            is optimized for third-party turn detection models and would
+            split entities like phone numbers across turns.)
+        vad_threshold: AssemblyAI's internal VAD onset threshold (0.0-1.0).
+            Default 0.3 per the LiveKit best-practices doc; pair with a
+            matching Silero `activation_threshold` if running an external
+            VAD to avoid the dead-zone where one detects speech and the
+            other doesn't.
+        format_turns: Apply formatting (numbers, dates, etc.) to final
+            transcripts. When None, uses the plugin's default.
+        keyterms_prompt: List of domain terms to boost in recognition
+            (up to 100 terms, each ≤50 chars). When None, none provided.
+        end_of_turn_confidence_threshold: Confidence threshold for the
+            end-of-turn detector. When None, uses the plugin's default.
+        min_end_of_turn_silence_when_confident: Minimum silence (ms)
+            before end-of-turn when the model is confident. When None,
+            uses the plugin's default.
+    """
+
+    provider: Literal["assemblyai"] = "assemblyai"
+    model: str = "u3-rt-pro"
+    api_key: Optional[str] = None
+    min_turn_silence: int = 100
+    max_turn_silence: int = 1000
+    vad_threshold: float = 0.3
+    format_turns: Optional[bool] = None
+    keyterms_prompt: Optional[list[str]] = None
+    end_of_turn_confidence_threshold: Optional[float] = None
+    min_end_of_turn_silence_when_confident: Optional[int] = None
+
+
+# Type alias for STT configs
+STTConfig = Union[DeepgramSTTConfig, DeepgramFluxSTTConfig, AssemblyAISTTConfig]
 
 
 # =============================================================================
@@ -188,9 +276,16 @@ class CascadedConfig(BaseModel):
 # =============================================================================
 
 CASCADED_CONFIGS: Dict[str, CascadedConfig] = {
-    # Default: Balanced speed and quality
+    # Default: Balanced speed and quality (Deepgram nova-3 STT)
     "default": CascadedConfig(
         stt=DeepgramSTTConfig(model="nova-3"),
+        llm=OpenAILLMConfig(model="gpt-4.1"),
+        tts=DeepgramTTSConfig(model="aura-asteria-en"),
+    ),
+    # Deepgram Flux STT (v2 streaming) — same LLM + TTS as "default".
+    # Flux uses Deepgram's confidence-based EOT model on the v2 endpoint.
+    "deepgram-flux": CascadedConfig(
+        stt=DeepgramFluxSTTConfig(model="flux-general-en"),
         llm=OpenAILLMConfig(model="gpt-4.1"),
         tts=DeepgramTTSConfig(model="aura-asteria-en"),
     ),
@@ -200,5 +295,23 @@ CASCADED_CONFIGS: Dict[str, CascadedConfig] = {
         llm=OpenAILLMConfig(model="gpt-5.2", reasoning_effort="high"),
         tts=DeepgramTTSConfig(model="aura-asteria-en"),
         # preamble=True,
+    ),
+    # AssemblyAI U3-RT-Pro STT, identical LLM + TTS as "default" — used for
+    # head-to-head STT comparison against the "default" Deepgram preset.
+    # `min_turn_silence=350` is critical: with the default 100ms, the
+    # speculative end-of-turn check fires during the natural pauses between
+    # letters when a user spells a name or reads a phone number, and the
+    # model inserts terminal punctuation after each fragment. Verified
+    # empirically — at 100/1000, "K, O, V, A, C, S" arrived as 3 separate
+    # turns and the agent looked up garbage names like "Kobac"/"Kove"/"Ko".
+    "assemblyai": CascadedConfig(
+        stt=AssemblyAISTTConfig(
+            model="u3-rt-pro",
+            min_turn_silence=350,
+            max_turn_silence=1000,
+            vad_threshold=0.3,
+        ),
+        llm=OpenAILLMConfig(model="gpt-4.1"),
+        tts=DeepgramTTSConfig(model="aura-asteria-en"),
     ),
 }

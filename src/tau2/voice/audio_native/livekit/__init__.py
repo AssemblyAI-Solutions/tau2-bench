@@ -38,7 +38,9 @@ Usage:
 from tau2.voice.audio_native.livekit.config import (
     CASCADED_CONFIGS,
     AnthropicLLMConfig,
+    AssemblyAISTTConfig,
     CascadedConfig,
+    DeepgramFluxSTTConfig,
     DeepgramSTTConfig,
     DeepgramTTSConfig,
     ElevenLabsTTSConfig,
@@ -72,21 +74,24 @@ def preregister_livekit_plugins() -> None:
     """
     from loguru import logger
 
-    try:
-        # Import the plugins - this triggers their registration
-        from livekit.plugins import (  # noqa: F401
-            anthropic,
-            deepgram,
-            elevenlabs,
-            openai,
-        )
-
-        logger.debug("LiveKit plugins pre-registered on main thread")
-    except ImportError as e:
+    # Each plugin gets its own try/except so a missing optional plugin
+    # doesn't prevent the others from registering. Importing the module
+    # triggers its `Plugin.register_plugin(...)` call at module-import time,
+    # which requires the main thread.
+    registered: list[str] = []
+    for plugin_name in ("deepgram", "openai", "anthropic", "elevenlabs", "assemblyai"):
+        try:
+            __import__(f"livekit.plugins.{plugin_name}")
+            registered.append(plugin_name)
+        except ImportError:
+            logger.debug(f"livekit-plugins-{plugin_name} not installed, skipping")
+    if registered:
+        logger.debug(f"LiveKit plugins pre-registered on main thread: {registered}")
+    else:
         logger.warning(
-            f"Failed to pre-register LiveKit plugins: {e}. "
-            "Install with: pip install livekit-plugins-openai livekit-plugins-deepgram "
-            "livekit-plugins-anthropic livekit-plugins-elevenlabs"
+            "No LiveKit plugins could be pre-registered. Install with: "
+            "pip install livekit-plugins-openai livekit-plugins-deepgram "
+            "livekit-plugins-assemblyai"
         )
 
 
@@ -109,6 +114,8 @@ __all__ = [
     "LLMConfig",
     "TTSConfig",
     "DeepgramSTTConfig",
+    "DeepgramFluxSTTConfig",
+    "AssemblyAISTTConfig",
     "OpenAILLMConfig",
     "AnthropicLLMConfig",
     "DeepgramTTSConfig",

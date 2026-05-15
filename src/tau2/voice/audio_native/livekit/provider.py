@@ -31,6 +31,8 @@ from tau2.environment.tool import Tool
 from tau2.voice.audio_native.livekit.config import (
     AnthropicLLMConfig,
     CascadedConfig,
+    AssemblyAISTTConfig,
+    DeepgramFluxSTTConfig,
     DeepgramSTTConfig,
     DeepgramTTSConfig,
     ElevenLabsTTSConfig,
@@ -392,6 +394,69 @@ class CascadedVoiceProvider:
             except ImportError as e:
                 logger.error(f"Failed to import livekit-plugins-deepgram: {e}")
                 raise
+        elif isinstance(config, DeepgramFluxSTTConfig):
+            try:
+                from livekit.plugins import deepgram
+
+                kwargs: Dict[str, Any] = {
+                    "model": config.model,
+                    "sample_rate": config.sample_rate,
+                    "http_session": self._http_session,
+                }
+                if config.eager_eot_threshold is not None:
+                    kwargs["eager_eot_threshold"] = config.eager_eot_threshold
+                if config.eot_threshold is not None:
+                    kwargs["eot_threshold"] = config.eot_threshold
+                if config.eot_timeout_ms is not None:
+                    kwargs["eot_timeout_ms"] = config.eot_timeout_ms
+                if config.keyterm is not None:
+                    kwargs["keyterm"] = config.keyterm
+                if config.keyterms is not None:
+                    kwargs["keyterms"] = config.keyterms
+
+                self._stt_client = deepgram.STTv2(**kwargs)
+                logger.debug(f"Initialized Deepgram Flux STT (v2): {config.model}")
+            except ImportError as e:
+                logger.error(f"Failed to import livekit-plugins-deepgram: {e}")
+                raise
+        elif isinstance(config, AssemblyAISTTConfig):
+            try:
+                from livekit.plugins import assemblyai as assemblyai_plugin
+
+                # Only pass NOT-None values so the plugin's own defaults
+                # take over for unset optional fields.
+                kwargs: Dict[str, Any] = {
+                    "model": config.model,
+                    "min_turn_silence": config.min_turn_silence,
+                    "max_turn_silence": config.max_turn_silence,
+                    "vad_threshold": config.vad_threshold,
+                    "http_session": self._http_session,
+                }
+                if config.api_key is not None:
+                    kwargs["api_key"] = config.api_key
+                if config.format_turns is not None:
+                    kwargs["format_turns"] = config.format_turns
+                if config.keyterms_prompt is not None:
+                    kwargs["keyterms_prompt"] = config.keyterms_prompt
+                if config.end_of_turn_confidence_threshold is not None:
+                    kwargs["end_of_turn_confidence_threshold"] = (
+                        config.end_of_turn_confidence_threshold
+                    )
+                if config.min_end_of_turn_silence_when_confident is not None:
+                    kwargs["min_end_of_turn_silence_when_confident"] = (
+                        config.min_end_of_turn_silence_when_confident
+                    )
+
+                self._stt_client = assemblyai_plugin.STT(**kwargs)
+                logger.debug(
+                    f"Initialized AssemblyAI STT: model={config.model} "
+                    f"min_turn_silence={config.min_turn_silence}ms "
+                    f"max_turn_silence={config.max_turn_silence}ms "
+                    f"vad_threshold={config.vad_threshold}"
+                )
+            except ImportError as e:
+                logger.error(f"Failed to import livekit-plugins-assemblyai: {e}")
+                raise
         else:
             raise ValueError(f"Unknown STT config type: {type(config)}")
 
@@ -700,10 +765,17 @@ class CascadedVoiceProvider:
         # Fallback: if we have accumulated transcript and no new transcript
         # activity for utterance_end_ms, trigger the LLM. This handles the
         # case where END_OF_SPEECH never fires (common with background noise).
-        if self._accumulated_transcript and self._last_transcript_time is not None:
+        # Only Deepgram exposes this knob; AssemblyAI's own forced turn-end
+        # via max_turn_silence already covers the same failure mode, so we
+        # skip the fallback when the field isn't present on the config.
+        utterance_end_ms = getattr(self.config.stt, "utterance_end_ms", 0)
+        if (
+            utterance_end_ms > 0
+            and self._accumulated_transcript
+            and self._last_transcript_time is not None
+        ):
             silence_ms = (time.time() - self._last_transcript_time) * 1000
-            utterance_end_ms = self.config.stt.utterance_end_ms
-            if utterance_end_ms > 0 and silence_ms >= utterance_end_ms:
+            if silence_ms >= utterance_end_ms:
                 if self._state == ProviderState.LISTENING:
                     self._is_user_speaking = False
                     async for llm_event in self._trigger_llm():
