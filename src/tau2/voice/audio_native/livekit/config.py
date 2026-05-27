@@ -135,6 +135,9 @@ class AssemblyAISTTConfig(BaseModel):
     keyterms_prompt: Optional[list[str]] = None
     end_of_turn_confidence_threshold: Optional[float] = None
     min_end_of_turn_silence_when_confident: Optional[int] = None
+    voice_focus: Optional[str] = None
+    voice_focus_threshold: Optional[float] = None
+    turn_left_pad_ms: Optional[int] = None
 
 
 # Type alias for STT configs

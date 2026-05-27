@@ -446,13 +446,22 @@ class CascadedVoiceProvider:
                     kwargs["min_end_of_turn_silence_when_confident"] = (
                         config.min_end_of_turn_silence_when_confident
                     )
+                if config.voice_focus is not None:
+                    kwargs["voice_focus"] = config.voice_focus
+                if config.voice_focus_threshold is not None:
+                    kwargs["voice_focus_threshold"] = config.voice_focus_threshold
+                if config.turn_left_pad_ms is not None:
+                    kwargs["turn_left_pad_ms"] = config.turn_left_pad_ms
 
                 self._stt_client = assemblyai_plugin.STT(**kwargs)
                 logger.debug(
                     f"Initialized AssemblyAI STT: model={config.model} "
                     f"min_turn_silence={config.min_turn_silence}ms "
                     f"max_turn_silence={config.max_turn_silence}ms "
-                    f"vad_threshold={config.vad_threshold}"
+                    f"vad_threshold={config.vad_threshold} "
+                    f"voice_focus={config.voice_focus} "
+                    f"voice_focus_threshold={config.voice_focus_threshold} "
+                    f"turn_left_pad_ms={config.turn_left_pad_ms}"
                 )
             except ImportError as e:
                 logger.error(f"Failed to import livekit-plugins-assemblyai: {e}")
