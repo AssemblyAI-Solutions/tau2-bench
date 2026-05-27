@@ -3,6 +3,7 @@ import base64
 import io
 import json
 import os
+import time
 import wave
 
 import requests
@@ -45,6 +46,9 @@ def transcribe_audio(
 
         elif config.model in ["gpt-4o-transcribe", "gpt-4o-mini-transcribe"]:
             return asyncio.run(transcribe_gpt4o_realtime(pcm_audio_data, config))
+
+        elif config.model == "assemblyai-universal-3-pro":
+            return transcribe_assemblyai(pcm_audio_data, config)
 
         else:
             return TranscriptionResult(
@@ -199,6 +203,103 @@ def transcribe_whisper(
     except Exception as e:
         return TranscriptionResult(
             transcript="", error=f"OpenAI transcription failed: {str(e)}"
+        )
+
+
+def transcribe_assemblyai(
+    audio_data: AudioData, config: TranscriptionConfig
+) -> TranscriptionResult:
+    """Transcribe audio data using AssemblyAI's async pre-recorded API.
+
+    Uses `speech_models=["universal-3-pro", "universal-2"]` — the documented
+    ordered fallback. Universal-3 Pro is the primary; Universal-2 covers
+    languages U3 Pro doesn't yet support.
+
+    Auth: `Authorization: <api_key>` (no `Bearer` prefix — that's only for
+    AssemblyAI's Voice Agent API).
+
+    Audio data must be in mono, 16-bit PCM at 24kHz.
+    """
+    _validate_pcm16_mono_24000(audio_data.format)
+
+    try:
+        api_key = os.getenv("ASSEMBLYAI_API_KEY")
+        if not api_key:
+            return TranscriptionResult(
+                transcript="", error="ASSEMBLYAI_API_KEY not found in environment"
+            )
+
+        wav_buffer = io.BytesIO()
+        with wave.open(wav_buffer, "wb") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(DEFAULT_OPENAI_OUTPUT_SAMPLE_RATE)
+            wav_file.writeframes(audio_data.data)
+        wav_buffer.seek(0)
+        wav_bytes = wav_buffer.read()
+
+        headers = {"authorization": api_key}
+
+        upload_response = requests.post(
+            "https://api.assemblyai.com/v2/upload",
+            headers={**headers, "content-type": "application/octet-stream"},
+            data=wav_bytes,
+            timeout=60,
+        )
+        upload_response.raise_for_status()
+        upload_url = upload_response.json().get("upload_url")
+        if not upload_url:
+            return TranscriptionResult(
+                transcript="", error="AssemblyAI upload did not return an upload_url"
+            )
+
+        params: dict = {
+            "audio_url": upload_url,
+            "speech_models": ["universal-3-pro", "universal-2"],
+        }
+        if config.language:
+            params["language_code"] = config.language
+        params.update(config.extra_options)
+
+        submit_response = requests.post(
+            "https://api.assemblyai.com/v2/transcript",
+            headers={**headers, "content-type": "application/json"},
+            json=params,
+            timeout=30,
+        )
+        submit_response.raise_for_status()
+        transcript_id = submit_response.json().get("id")
+        if not transcript_id:
+            return TranscriptionResult(
+                transcript="", error="AssemblyAI did not return a transcript id"
+            )
+
+        poll_url = f"https://api.assemblyai.com/v2/transcript/{transcript_id}"
+        deadline = time.time() + 300
+        while time.time() < deadline:
+            poll_response = requests.get(poll_url, headers=headers, timeout=30)
+            poll_response.raise_for_status()
+            payload = poll_response.json()
+            status = payload.get("status")
+            if status == "completed":
+                return TranscriptionResult(
+                    transcript=payload.get("text", "") or "",
+                    confidence=payload.get("confidence"),
+                )
+            if status == "error":
+                return TranscriptionResult(
+                    transcript="",
+                    error=f"AssemblyAI error: {payload.get('error', 'unknown')}",
+                )
+            time.sleep(3.0)
+
+        return TranscriptionResult(
+            transcript="", error="AssemblyAI transcription timed out"
+        )
+
+    except Exception as e:
+        return TranscriptionResult(
+            transcript="", error=f"AssemblyAI transcription failed: {str(e)}"
         )
 
 

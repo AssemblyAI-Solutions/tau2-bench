@@ -51,6 +51,7 @@ def list_models() -> None:
         ("whisper-1", "OpenAI", "REST", "OPENAI_API_KEY"),
         ("gpt-4o-transcribe", "OpenAI", "WebSocket", "OPENAI_API_KEY"),
         ("gpt-4o-mini-transcribe", "OpenAI", "WebSocket", "OPENAI_API_KEY"),
+        ("assemblyai-universal-3-pro", "AssemblyAI", "REST", "ASSEMBLYAI_API_KEY"),
     ]
 
     for model, provider, api_type, env_var in models_info:
@@ -87,6 +88,12 @@ def transcribe(
     if model in ["nova-2", "nova-3"]:
         if not os.getenv("DEEPGRAM_API_KEY"):
             console.print("[red]Error: DEEPGRAM_API_KEY not found in environment[/red]")
+            raise SystemExit(1)
+    elif model == "assemblyai-universal-3-pro":
+        if not os.getenv("ASSEMBLYAI_API_KEY"):
+            console.print(
+                "[red]Error: ASSEMBLYAI_API_KEY not found in environment[/red]"
+            )
             raise SystemExit(1)
     else:
         if not os.getenv("OPENAI_API_KEY"):
