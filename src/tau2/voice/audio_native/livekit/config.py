@@ -318,3 +318,112 @@ CASCADED_CONFIGS: Dict[str, CascadedConfig] = {
         tts=DeepgramTTSConfig(model="aura-asteria-en"),
     ),
 }
+
+# ---------------------------------------------------------------------------
+# Local-only experiment fixtures (NOT included in upstream PR).
+# Restored after the PR-clean commit so we can keep running parameter
+# sweeps without re-editing this file each time. Do not commit.
+# ---------------------------------------------------------------------------
+
+# Legacy/experimental: original LiveKit-docs default (min=100, max=1000).
+# Reproduces the entity-splitting failure mode.
+CASCADED_CONFIGS["assemblyai-fast-min"] = CascadedConfig(
+    stt=AssemblyAISTTConfig(
+        model="u3-rt-pro",
+        min_turn_silence=100,
+        max_turn_silence=1000,
+        vad_threshold=0.3,
+    ),
+    llm=OpenAILLMConfig(model="gpt-4.1"),
+    tts=DeepgramTTSConfig(model="aura-asteria-en"),
+)
+
+# Tighter forced-end (max=350). Experiment fixture, do not use.
+CASCADED_CONFIGS["assemblyai-tight"] = CascadedConfig(
+    stt=AssemblyAISTTConfig(
+        model="u3-rt-pro",
+        min_turn_silence=100,
+        max_turn_silence=350,
+        vad_threshold=0.3,
+    ),
+    llm=OpenAILLMConfig(model="gpt-4.1"),
+    tts=DeepgramTTSConfig(model="aura-asteria-en"),
+)
+
+# Sweep over min_turn_silence at 50ms intervals (250-750ms), max held at 1000ms.
+for _min_ms in range(250, 800, 50):
+    CASCADED_CONFIGS[f"aai-sweep-{_min_ms}"] = CascadedConfig(
+        stt=AssemblyAISTTConfig(
+            model="u3-rt-pro",
+            min_turn_silence=_min_ms,
+            max_turn_silence=1000,
+            vad_threshold=0.3,
+        ),
+        llm=OpenAILLMConfig(model="gpt-4.1"),
+        tts=DeepgramTTSConfig(model="aura-asteria-en"),
+    )
+del _min_ms
+
+# Sweep over vad_threshold (0.1, 0.2, 0.3) — sensitivity of AAI's internal VAD
+# onset detector. Endpointing held at 350/1000 (the corrected canonical config).
+for _vad in [0.1, 0.2, 0.3]:
+    _label = f"vad{int(_vad*10):02d}"  # "vad01", "vad02", "vad03"
+    CASCADED_CONFIGS[f"aai-{_label}"] = CascadedConfig(
+        stt=AssemblyAISTTConfig(
+            model="u3-rt-pro",
+            min_turn_silence=350,
+            max_turn_silence=1000,
+            vad_threshold=_vad,
+        ),
+        llm=OpenAILLMConfig(model="gpt-4.1"),
+        tts=DeepgramTTSConfig(model="aura-asteria-en"),
+    )
+del _vad, _label
+
+# vad=0.1, no voice_focus, min_turn_silence=500ms — isolates the silence
+# bump independently of voice_focus. Cell 2 in the n=100 sweep matrix.
+CASCADED_CONFIGS["aai-vad01-500"] = CascadedConfig(
+    stt=AssemblyAISTTConfig(
+        model="u3-rt-pro",
+        min_turn_silence=500,
+        max_turn_silence=1000,
+        vad_threshold=0.1,
+    ),
+    llm=OpenAILLMConfig(model="gpt-4.1"),
+    tts=DeepgramTTSConfig(model="aura-asteria-en"),
+)
+
+# vad=0.1 + voice_focus=near-field (threshold=1.0) — best file-level config
+# observed on noisy/accented audio. Recovers 9 finals vs 4 baseline on the
+# Yusuf Rossi sample. voice_focus is an alpha-only parameter not in the public
+# LiveKit plugin — forwarded via local patch.
+CASCADED_CONFIGS["aai-vad01-nf"] = CascadedConfig(
+    stt=AssemblyAISTTConfig(
+        model="u3-rt-pro",
+        min_turn_silence=350,
+        max_turn_silence=1000,
+        vad_threshold=0.1,
+        voice_focus="near-field",
+        voice_focus_threshold=1.0,
+    ),
+    llm=OpenAILLMConfig(model="gpt-4.1"),
+    tts=DeepgramTTSConfig(model="aura-asteria-en"),
+)
+
+# Same as aai-vad01-nf but with min_turn_silence bumped to test whether
+# longer EOT silence avoids splitting digit-bursts (e.g. "555-123-2002"
+# spoken with 200ms pauses between digit clusters).
+for _ms in (500, 750):
+    CASCADED_CONFIGS[f"aai-vad01-nf-{_ms}"] = CascadedConfig(
+        stt=AssemblyAISTTConfig(
+            model="u3-rt-pro",
+            min_turn_silence=_ms,
+            max_turn_silence=1000,
+            vad_threshold=0.1,
+            voice_focus="near-field",
+            voice_focus_threshold=1.0,
+        ),
+        llm=OpenAILLMConfig(model="gpt-4.1"),
+        tts=DeepgramTTSConfig(model="aura-asteria-en"),
+    )
+del _ms
