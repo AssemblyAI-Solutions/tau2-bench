@@ -135,8 +135,8 @@ DEFAULT_AUDIO_NATIVE_MAX_INACTIVE_SECONDS = 40.0  # fixed, stall detection
 # =============================================================================
 # OPENAI PROVIDER (overridable model/voice, fixed API constants)
 # =============================================================================
-DEFAULT_OPENAI_REALTIME_MODEL = "gpt-realtime-1.5"  # overridable
-_LEGACY_OPENAI_REALTIME_MODEL = "gpt-realtime-2025-08-28"
+DEFAULT_OPENAI_REALTIME_MODEL = "gpt-realtime-2"  # overridable
+_LEGACY_OPENAI_REALTIME_MODEL = "gpt-realtime-1.5"
 DEFAULT_OPENAI_REALTIME_BASE_URL = "wss://api.openai.com/v1/realtime"  # fixed
 DEFAULT_OPENAI_VOICE = "alloy"  # overridable
 DEFAULT_OPENAI_NOISE_REDUCTION = "near_field"  # fixed: "near_field", "far_field", None
